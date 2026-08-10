@@ -62,20 +62,26 @@ fungicide = read.csv("data/Rita_longitudinal/monthly_disease_survey_171819.csv",
   summarise(disease.sum = sum(presence)) %>% mutate(disease.sum = ifelse(disease.sum >= 1, 1, 0)) %>%
   pivot_wider(names_from = disease, values_from = disease.sum)
 
-midmonth.control = read.csv("data/Rita_longitudinal/midmonthly_disease_survey_2019.csv", header = T) %>% filter(fungicide == "Never") %>%
+midmonth.control = read.csv("data/Rita_longitudinal/midmonthly_disease_survey_2019.csv", header = T) %>%
+  filter(fungicide == "Never") %>%
   select(month, year, plot, survey_date, plant, leaf, anthracnose, crown_rust, brown_patch) %>%
   pivot_longer(anthracnose:brown_patch, names_to = "disease", values_to = "presence") %>%
   group_by(plant, survey_date, plot, month, year, disease) %>%
   summarise(disease.sum = sum(presence)) %>% mutate(disease.sum = ifelse(disease.sum >= 1, 1, 0)) %>%
   pivot_wider(names_from = disease, values_from = disease.sum)
 
+#I think that I accidentally kept the fungicide-treated plants here? Check
 long2018 = read.csv("data/Rita_longitudinal/longitudinal_disease_survey_2018.csv", header = T)
-merge2018 = long2018 %>% select(PlotLoc, ID, Leaf, anthracnose, crown_rust, brown_patch, Survey.Date) #only keep 2018
+#need the plot treatments
+trtments = read.csv('data/Rita_longitudinal/plot_treatments.csv')
+long2018 = long2018 %>% left_join(trtments) %>% filter(fungicide == "Never")
+merge2018 = long2018 %>% select(plot, tiller, leaf, anthracnose, crown_rust, brown_patch, survey_date) #only keep 2018
+#this isn't structured the way I thought it was
 #get rid of individual plant ID's, we're not going to track them through time in the overall model
 longitudinal =  merge2018 %>% pivot_longer(anthracnose:brown_patch, names_to = "disease", values_to = "presence") %>%
-  group_by(PlotLoc, ID, disease, Survey.Date) %>% summarise(disease.sum = sum(presence)) %>%
-  mutate(disease.sum = ifelse(disease.sum >=1, 1, 0)) %>% pivot_wider(names_from = disease, values_from = disease.sum) %>%
-  separate(PlotLoc, into = c("PlotID", "SubID")) %>% mutate(PlotID = as.numeric(PlotID)) %>% drop_na()
+  group_by(plot, tiller, disease, survey_date) %>% summarise(disease.sum = sum(presence)) %>%
+  mutate(disease.sum = ifelse(disease.sum >=1, 1, 0)) %>% pivot_wider(names_from = disease, values_from = disease.sum)
+
 
 #2024 plot survey data
 #want only unsprayed uninoculated plots
@@ -106,8 +112,9 @@ midmonth19 = midmonth.control %>% mutate(survey_date = as.Date(survey_date, form
   mutate(plotID = paste(gsub("plotID", "fencedID", plot))) %>% select(plotID, brown_patch, crown_rust, anthracnose, survey_date)
 colnames(midmonth19) = c("PlotID", "brown_patch", "crown_rust", "anthracnose", "Survey.Date") 
 
-long18 = longitudinal %>% mutate(Survey.Date = as.Date(Survey.Date, format = "%m/%d/%y")) %>% ungroup() %>%
-  mutate(plotID = paste("fencedID", PlotID, sep = "_")) %>% select(plotID, brown_patch, crown_rust, anthracnose, Survey.Date)
+long18 = longitudinal %>% mutate(survey_date = as.Date(survey_date, format = "%m/%d/%y")) %>% ungroup() %>%
+  mutate(PlotID = paste("fencedID", gsub("plotID_", "", plot), sep = "_")) %>%
+  select(PlotID, brown_patch, crown_rust, anthracnose, survey_date)
 colnames(long18) = c("PlotID", "brown_patch", "crown_rust", "anthracnose", "Survey.Date") 
 
 plots24 = plots2024 %>% mutate(Survey.Date = as.Date(Survey.Date, format = "%Y-%m-%d")) %>% ungroup() %>%
@@ -203,6 +210,7 @@ lag.prev = mean.prev %>% group_by(PlotID) %>%
          lag.anthracnose = anthracnose)
 
 
+save(pc.roll, file = "data/weather.pcs.Rdata")
 ####### Merge master dataset with environmental values and lagged prevalences #######
 data.meta = left_join(left_join(master.widener, pc.roll), lag.prev) %>% select(!Npoints) %>%
   drop_na() %>% mutate(month = month(Survey.Date), year = year(Survey.Date))
@@ -217,3 +225,13 @@ colnames(rf.data)[14:45] = paste("env_", colnames(rf.data)[14:45], sep = "")
 
 save(rf.data, file = "data/Env+DiseaseData.Rdata")
 write.csv(rf.data, file = "data/Env+DiseaseData.csv")
+
+long2018.cntl = read.csv("data/Rita_longitudinal/longitudinal_disease_survey_2018.csv", header = T)
+#need the plot treatments
+trtments = read.csv('data/Rita_longitudinal/plot_treatments.csv')
+long2018.cntl = long2018.cntl %>% left_join(trtments) %>% filter(fungicide == "Never")
+
+long.withweather = long2018.cntl %>% mutate(Survey.Date = as.Date(survey_date, format = "%m/%d/%Y"))%>% dplyr::select(!survey_date) %>%
+  left_join(pc.roll)
+
+save(long.withweather, file = "data/long2018weather.Rdata")

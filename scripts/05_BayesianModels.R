@@ -25,6 +25,7 @@ month.brm.rust <- brm(
     (1 | plot_id),
   data = data.rust,
   family = "bernoulli",
+  backend = "cmdstanr",
   prior = prior,
   cores = 4,
   thin = 4, 
@@ -102,6 +103,9 @@ rust.pos = data.rust %>% filter(crown_rust == 1)
 rust.neg = data.rust %>% filter(crown_rust == 0)
 
 
+dis.pal <- c(RColorBrewer::brewer.pal(12, "Paired")[c(1:2, 3:4)], "#FEE99A", "#FEC601")
+
+names(dis.pal) = c("anth_neg", "anth_pos", "bp_neg", "bp_pos", "rust_neg", "rust_pos" )
 
 plist <- list()
 
@@ -127,6 +131,7 @@ for(patho in c("anthracnose", "brown_patch")){
     ggsave(paste("results/CRbrms_ce_", patho, pc, ".pdf", sep = ""), plot = p, width = 1.5, height = 1.2)
   }
 }
+patchwork::wrap_plots(plist)
 
 #####------------- Anthracnose ---------------------
 
@@ -143,11 +148,12 @@ month.brm.anth <- brm(
     (1 | plot_id),
   data = data.anth,
   family = "bernoulli",
+  backend = "cmdstanr",
   prior = prior,
   cores = 4,
   thin = 4, 
-  iter = 6000,
-  threads = threading(2)                      
+  iter = 6000,# parallel computation, adjust as needed
+  threads = threading(2)                       
 ) 
 
 save(month.brm.anth, file = "results/bigdata.month.brm.anth.Rdata")
@@ -258,6 +264,7 @@ month.brm.bp <- brm(
   family = "bernoulli",
   prior = prior,
   cores = 4,
+  backend = "cmdstanr",
   thin = 4, 
   iter = 6000,
   threads = threading(2)                      
@@ -327,8 +334,6 @@ ggsave("results/logOdds_BP.pdf", width = 6.5, height = 4)
 ###Conditional effects brown patch
 bp.pos = data.bp %>% filter(brown_patch == 1) 
 bp.neg = data.bp %>% filter(brown_patch == 0)
-
-
 
 plist <- list()
 

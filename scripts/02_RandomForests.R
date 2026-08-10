@@ -229,7 +229,7 @@ ggsave(filename = paste("results/CR_RF_ALE_", "coinfection", ".pdf", sep = ""), 
 ###### ------------- MACHINE LEARNING FOR BROWN PATCH ---------------- ##############
 set.seed(222)
 
-metric <- metric_set(rmse)
+metric <- metric_set(r0se)
 var_only <- rf.data %>%
   mutate(crown_rust = as.numeric(as.character(crown_rust))) %>% select(!c(npoints)) %>%
   mutate(anthracnose = as.numeric(as.character(anthracnose)), brown_patch = as.numeric(as.character(brown_patch))) %>% arrange(survey_date) %>%
@@ -237,6 +237,31 @@ var_only <- rf.data %>%
 
 split_data = initial_time_split(var_only, prop = .8)
 
+#set up a workflow
+rf_workflow <- workflow() %>%
+  add_recipe(recipe_mod) %>%
+  add_model(rf_spec) 
+
+#Try mtry values from 4 to 32, this determines the number of variables each RF consideres
+grid <- grid_regular(mtry(range = c(4, 32)), levels = 8)
+
+#Run it with temporal resampling.... doing some hefty lifting here. 
+
+
+#basic recipe
+basic_rec <- recipe(brown_patch ~ ., data = training(split_data)) %>%
+  update_role(survey_date, new_role = "SamplingDate") %>%
+  update_role(plot_id, new_role = "PlotID") %>%
+  step_zv(all_predictors())
+
+recipe_mod <- basic_rec |>
+  step_novel(plot_id) %>%
+  step_dummy(all_nominal_predictors()) |>
+  step_mutate(brown_patch = factor(brown_patch)
+  ) |>
+  step_upsample(brown_patch)
+
+#set up a model
 rf_spec <- rand_forest(
   mtry = tune(), #tune the mtry hyperparameter here
   trees = 3000, #up the number of trees to better stabilize variable importances
@@ -262,41 +287,8 @@ rf_results <- tune_grid(
 ) 
 
 plan(sequential)
-#basic recipe
-basic_rec <- recipe(brown_patch ~ ., data = training(split_data)) %>%
-  update_role(survey_date, new_role = "SamplingDate") %>%
-  update_role(plot_id, new_role = "PlotID") %>%
-  step_zv(all_predictors())
 
-recipe_mod <- basic_rec |>
-  step_novel(plot_id) %>%
-  step_dummy(all_nominal_predictors()) |>
-  step_mutate(brown_patch = factor(brown_patch)
-  ) |>
-  step_upsample(brown_patch)
 
-rf_spec <- rand_forest(
-  mtry = 4,
-  trees = 3000,
-  mode = "classification") %>%
-  set_engine("ranger", importance = "permutation")
-
-#set up a workflow
-rf_workflow <- workflow() %>%
-  add_recipe(recipe_mod) %>%
-  add_model(rf_spec) 
-
-library(future)
-plan(multisession, workers = 11) #not quire sure how to close this connection :( 
-
-rf_results <- tune_grid(
-  rf_workflow,
-  resamples = temporal_split
-  #control = ctrl_grid
-) 
-
-plan(sequential)
-#  COLLECT THE BEST RESULTS
 best_params <- select_best(rf_results, metric = "roc_auc")
 best_params
 
@@ -396,7 +388,7 @@ predictor <- Predictor$new(model=final_model$fit,
                            y=test_data_processed$brown_patch)
 
 get_ale = names(test_data_processed)[grepl("^env_maximum_soil_temp|^env_average_wind_speed|^env_maximum_relative_humidity|lag_anth|lag_crown", names(test_data_processed))]
-get_ale = names(test_data_processed)[names(test_data_processed) %in% voi$Variable]
+#get_ale = names(test_data_processed)[names(test_data_processed) %in% voi$Variable]
 
 #create a plot for each one
 plist <- list()
@@ -619,6 +611,7 @@ for(pred in 1:length(get_ale_pathos)){
     mutate(patho = get_ale_pathos[pred]) %>% select(!matches(get_ale_pathos[pred]))
   out.ale <- rbind(out.ale, path.ale)
 }
+
 
 #special barplot
 dis.pal <- c(RColorBrewer::brewer.pal(12, "Paired")[c(1:2, 3:4)], "#FEE99A", "#FEC601")
