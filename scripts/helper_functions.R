@@ -75,16 +75,16 @@ tr.ts.by.year <- function(fake_data, holdout){
   return(out.list)
 }
 
-viz_ales_1d <- function(predictor, pred){
+viz_ales_1d <- function(predictor, pred, lcol = "black"){
   getale <- FeatureEffect$new(predictor,
                               feature = pred,
                               method = "ale",
-                              grid.size = 25)$results %>%
+                              grid.size = 20)$results %>%
     filter(.class == "X1") 
   voi = pred
   p = getale %>%
     ggplot(aes(x=get(voi), y=.value)) +
-    geom_line(lwd = .9) + theme_bw() + geom_hline(yintercept = 0) + 
+    geom_line(lwd = .7, col = lcol ) + theme_classic() + geom_hline(yintercept = 0) + 
     xlab(pred) + ylab("ALE") 
   return(p)
 }

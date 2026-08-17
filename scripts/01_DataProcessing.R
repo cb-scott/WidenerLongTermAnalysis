@@ -60,7 +60,8 @@ fungicide = read.csv("data/Rita_longitudinal/monthly_disease_survey_171819.csv",
   pivot_longer(anthracnose:brown_patch, names_to = "disease", values_to = "presence") %>%
   group_by(plant, survey_date, plot, month, year, disease) %>%
   summarise(disease.sum = sum(presence)) %>% mutate(disease.sum = ifelse(disease.sum >= 1, 1, 0)) %>%
-  pivot_wider(names_from = disease, values_from = disease.sum)
+  pivot_wider(names_from = disease, values_from = disease.sum) %>%
+  mutate(survey_date = as.Date(survey_date, format = "%m/%d/%Y"))
 
 midmonth.control = read.csv("data/Rita_longitudinal/midmonthly_disease_survey_2019.csv", header = T) %>%
   filter(fungicide == "Never") %>%
@@ -68,7 +69,8 @@ midmonth.control = read.csv("data/Rita_longitudinal/midmonthly_disease_survey_20
   pivot_longer(anthracnose:brown_patch, names_to = "disease", values_to = "presence") %>%
   group_by(plant, survey_date, plot, month, year, disease) %>%
   summarise(disease.sum = sum(presence)) %>% mutate(disease.sum = ifelse(disease.sum >= 1, 1, 0)) %>%
-  pivot_wider(names_from = disease, values_from = disease.sum)
+  pivot_wider(names_from = disease, values_from = disease.sum)%>%
+  mutate(survey_date = as.Date(survey_date, format = "%m/%d/%Y"))
 
 #I think that I accidentally kept the fungicide-treated plants here? Check
 long2018 = read.csv("data/Rita_longitudinal/longitudinal_disease_survey_2018.csv", header = T)
@@ -80,7 +82,9 @@ merge2018 = long2018 %>% select(plot, tiller, leaf, anthracnose, crown_rust, bro
 #get rid of individual plant ID's, we're not going to track them through time in the overall model
 longitudinal =  merge2018 %>% pivot_longer(anthracnose:brown_patch, names_to = "disease", values_to = "presence") %>%
   group_by(plot, tiller, disease, survey_date) %>% summarise(disease.sum = sum(presence)) %>%
-  mutate(disease.sum = ifelse(disease.sum >=1, 1, 0)) %>% pivot_wider(names_from = disease, values_from = disease.sum)
+  mutate(disease.sum = ifelse(disease.sum >=1, 1, 0)) %>% 
+  pivot_wider(names_from = disease, values_from = disease.sum) %>%
+  mutate(survey_date = as.Date(survey_date, format = "%m/%d/%Y"))
 
 
 #2024 plot survey data
@@ -121,6 +125,7 @@ plots24 = plots2024 %>% mutate(Survey.Date = as.Date(Survey.Date, format = "%Y-%
   mutate(plotID = paste("WidenerPlot", Plot.ID, sep = "_")) %>% select(plotID, Rhiz.Prev, Rust.prev, Anth.Prev, Survey.Date)
 colnames(plots24) = c("PlotID", "brown_patch", "crown_rust", "anthracnose", "Survey.Date")  
 
+#something is wrong, why do my dates start at 2020
 master.widener = rbind(widener2021, widener2022.24, fung171819, midmonth19, long18, plots24)
 write.csv(master.widener, "data/MasterDataset.csv", quote = F, row.names = F)
 
@@ -145,6 +150,7 @@ all_weather = bind_rows(lapply(weather, readin)) %>%
   mutate(across(contains(".F."), function(x) (x-32)/1.8)) %>%
   mutate(across(contains(".in"), function(x) x*2.54)) %>%
   mutate(across(contains("..mph."), function(x) x*1.609 ))
+
 colnames(all_weather)
 colnames(all_weather) = gsub("\\.F", ".C", colnames(all_weather))
 colnames(all_weather) = gsub("\\.in", ".cm", colnames(all_weather))
@@ -196,6 +202,26 @@ pheatmap(weather.loadings[,1:4], cluster_cols = F, color = colorRampPalette(brew
                                                                                          "BrBG"))(30))
 dev.off()
 
+#just PC1
+pc1 = data.frame(weather.loadings[c("average_soil_temperature_c", "average_air_temperature_c", "average_soil_moisture_m3_m3", "average_relative_humidity", "average_wind_speed_kph", "total_precipitation_cm"),1:4])
+rownames(pc1)=c("Soil Temp", "Air Temp", "Soil Mositure", "Humidity", "Wind Speed", "Precipitation")
+
+max_val <- max(abs(pc1), na.rm = TRUE)
+
+# create breaks symmetric around zero
+breaks <- seq(-max_val, max_val, length.out = 7)  # 31 breaks = 30 colors
+
+dev.off()
+pdf("results/simple_loadings.pdf", width = 1.6, height = 2.4)
+pheatmap(pc1, cluster_cols = FALSE, cluster_rows = T,
+         color = colorRampPalette(brewer.pal(n = 7, name = "BrBG"))(6),
+         legend = T,
+         fontsize = 8,
+         breaks = breaks, 
+         legend_breaks = c(-max_val,  0, max_val),
+         legend_labels = c(round(-max_val,1),  "0", round(max_val,1)))
+dev.off()
+
 #### Calculate lagged disease values #######
 
 mean.prev = master.widener %>% group_by(PlotID, Survey.Date) %>% 
@@ -216,7 +242,7 @@ data.meta = left_join(left_join(master.widener, pc.roll), lag.prev) %>% select(!
   drop_na() %>% mutate(month = month(Survey.Date), year = year(Survey.Date))
 
 rf.data = left_join(left_join(left_join(master.widener, pc.roll), lag.prev), env.roll) %>% 
-  drop_na() %>% mutate(month = month(Survey.Date), year = year(Survey.Date))
+  drop_na() %>% mutate(month = month(Survey.Date), year = year(Survey.Date)) #why is this starting at 2020
 
 colnames(rf.data) = 
   janitor::make_clean_names(colnames(rf.data))
@@ -235,3 +261,25 @@ long.withweather = long2018.cntl %>% mutate(Survey.Date = as.Date(survey_date, f
   left_join(pc.roll)
 
 save(long.withweather, file = "data/long2018weather.Rdata")
+
+#######################################################
+##### CREATE SUMMARY PLOTS OF DISEASE PREVALENCE ######
+#######################################################
+
+rf.data %>% mutate(year = year(survey_date), doy = as.Date(yday(survey_date), origin = "2020-01-01")) %>% group_by(plot_id, survey_date, doy, year) %>%
+  summarise(across(brown_patch:anthracnose, mean, na.rm = T)) %>%
+  pivot_longer(brown_patch:anthracnose, names_to = "disease", values_to = "prev") %>%
+  ggplot(aes(x=doy, y=prev, group = year)) + geom_smooth(aes(col = year, fill = year), alpha = .2) + 
+  theme_bw() + 
+  scale_color_viridis_c(option = "viridis") +
+  scale_fill_viridis_c(option = "viridis") +
+  ylim(c(-.1,1.1)) +
+  scale_x_continuous(breaks = c( seq(from=as.Date("01/15/2020", format = "%m/%d/%Y"),
+                                     to= as.Date("12/15/2020", format = "%m/%d/%Y"),
+                                     by = "month")),
+                      labels = c("Jan", "Feb", "Mar", "April", "May", "Jun", "July", "Aug", "Sept", "Oct", "Nov", "Dec"))+
+  theme(axis.text.x = element_text(angle = 90), text = element_text(size =8 )) + 
+  xlab("") + 
+  ylab("Prevalence") +
+  facet_wrap(~disease, nrow = 3)
+ggsave("Figures/ByYear_Prevalence.pdf", width = 6.5, height = 6.5)

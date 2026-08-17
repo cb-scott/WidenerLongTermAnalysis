@@ -93,7 +93,7 @@ final_rf <- rf_workflow %>%
 
 save(final_rf, file="results/crown_rust_rf_mtry4_upsample.Rdata")
 
-load("results/crown_rust_rf_mtry4_upsample.Rdata")
+load("results/crown_rust_rf_mtry4_upsample.Rdata") #final mtry was actually 8
 
 
 #Extract best fit and metrics from final model
@@ -185,7 +185,7 @@ predictor <- Predictor$new(model=final_model$fit,
                            data = dplyr::select(test_data_processed,-c(crown_rust)),
                            y=test_data_processed$crown_rust)
 
-get_ale = names(test_data_processed)[grepl("^env_maximum_photosynthetically|^env_maximum_relative_humid|^env_average_wind_speed|lag_anthracnose", names(test_data_processed))]
+#get_ale = names(test_data_processed)[grepl("^env_maximum_photosynthetically|^env_maximum_relative_humid|^env_average_wind_speed|lag_anthracnose", names(test_data_processed))]
 get_ale = names(test_data_processed)[names(test_data_processed) %in% voi$Variable]
 #create a plot for each one
 plist <- list()
@@ -201,6 +201,34 @@ for(var in 1:length(get_ale)){
 library(cowplot)
 plot_grid(plotlist = plist, nrow = 5, ncol = 3)
 ggsave("results/allALEs_RUST.pdf", width = 6.5, height = 8)
+
+#LET's GET THE ALES THAT WE WANT TO COMPARE ACROSS THE PATHOS
+comparison_ales <- c("env_maximum_relative_humidity",
+                     "env_average_wind_speed_kph",
+                     "env_total_precipitation_cm",
+                     "env_maximum_soil_temperature_c",
+                     "env_average_soil_moisture_m3_m3")
+getranks = vi(final_model)
+getranks$rank = 1:nrow(getranks)
+getranks %>% filter(Variable %in% c(comparison_ales, "anthracnose", "brown_patch"))
+nicenam=c("Humidity (%)",
+          "Wind Speed (kph)",
+          "Precipitation (cm)",
+          "Air Temperature (C)",
+          "Soil Moisture (m3/m3)")
+names(nicenam) = comparison_ales
+
+plist <- list()
+
+for(var in 1:length(comparison_ales)){
+    var1 <- nicenam[var]
+    var1 = paste(strwrap(var1, 30), collapse = '\n')
+    plist[[var]] = viz_ales_1d(predictor, comparison_ales[var], lcol = "#FEC601") + 
+      xlab(var1) + theme(text = element_text(size = 6), axis.text = element_text(size = 6)) +
+      xlim(c(min(rf.data[,comparison_ales[var]]), max(rf.data[,comparison_ales[var]]))) +
+      ylab("") + xlab("") 
+    ggsave(filename = paste("results/CR_RF_ALE_COMPARESET_", comparison_ales[var], ".pdf", sep = ""), plot = plist[[var]], width = 6.5/5, height = 1.6)
+ }
 
 #modify based on var of interest
 get_ale_pathos <- names(test_data_processed)[grepl("^anth|^brown", names(test_data_processed))]
@@ -218,18 +246,19 @@ for(pred in 1:length(get_ale_pathos)){
 #special barplot
 dis.pal <- c(RColorBrewer::brewer.pal(12, "Paired")[c(1:2, 3:4)], "#FEE99A", "#FEC601")
 
-out.ale %>% 
-  ggplot(aes(x=patho, y = .value, fill = patho)) + geom_bar(stat = "identity") + xlab("Disease Presence") + ylab("ALE") + 
-  theme_bw() + geom_hline(yintercept = 0) +
+out.ale %>% mutate(patho = ifelse(patho == "brown_patch", "BP", "ANTH")) %>%
+  ggplot(aes(x=patho, y = .value, fill = patho)) +
+  geom_bar(stat = "identity") + xlab("") + ylab("") + 
+  theme_classic() + geom_hline(yintercept = 0) +
   scale_fill_manual(values = c("#1F78B4", "#33A02C")) + 
-  theme(legend.position = "none", text = element_text(size = 6))
+  theme(legend.position = "none", text = element_text(size = 6)) + ylim(c(-0.012, 0.012))
 
-ggsave(filename = paste("results/CR_RF_ALE_", "coinfection", ".pdf", sep = ""), width =(6.5-3.25)/2, height = 4/2)
+ggsave(filename = paste("results/CR_RF_ALE_", "coinfection", ".pdf", sep = ""), width =(6.5)/5, height = 1.6)
 
 ###### ------------- MACHINE LEARNING FOR BROWN PATCH ---------------- ##############
 set.seed(222)
 
-metric <- metric_set(r0se)
+metric <- metric_set(rmse)
 var_only <- rf.data %>%
   mutate(crown_rust = as.numeric(as.character(crown_rust))) %>% select(!c(npoints)) %>%
   mutate(anthracnose = as.numeric(as.character(anthracnose)), brown_patch = as.numeric(as.character(brown_patch))) %>% arrange(survey_date) %>%
@@ -296,10 +325,10 @@ best_params
 #FINALIZE THE MODEL WITH THE BEST PARM SPACE
 final_rf <- rf_workflow %>%
   finalize_workflow(select_best(rf_results, metric = "roc_auc")) %>%
-  last_fit(split_data)
-save(final_rf, file="results/bp_rf_mtry4_roll7_upsample.Rdata")
+  last_fit(split_data) #why is my mtry magically different now? what is going on here?
+save(final_rf, file="results/bp_rf_mtry12_roll7_upsample.Rdata")
 
-load("results/bp_rf_mtry4_roll7_upsample.Rdata")
+load("results/bp_rf_mtry12_roll7_upsample.Rdata")
 
 all_metrics = collect_metrics(final_rf)
 all_metrics
@@ -387,8 +416,8 @@ predictor <- Predictor$new(model=final_model$fit,
                            data = dplyr::select(test_data_processed,-c(brown_patch)),
                            y=test_data_processed$brown_patch)
 
-get_ale = names(test_data_processed)[grepl("^env_maximum_soil_temp|^env_average_wind_speed|^env_maximum_relative_humidity|lag_anth|lag_crown", names(test_data_processed))]
-#get_ale = names(test_data_processed)[names(test_data_processed) %in% voi$Variable]
+#get_ale = names(test_data_processed)[grepl("^env_maximum_soil_temp|^env_average_wind_speed|^env_maximum_relative_humidity|lag_anth|lag_crown", names(test_data_processed))]
+get_ale = names(test_data_processed)[names(test_data_processed) %in% voi$Variable]
 
 #create a plot for each one
 plist <- list()
@@ -401,10 +430,39 @@ for(var in 1:length(get_ale)){
 }
 
 
-
+dev.off()
 library(cowplot)
 plot_grid(plotlist = plist, nrow = 5, ncol = 3)
 ggsave("results/allALEs_BP.pdf", width = 6.5, height = 8)
+
+
+#LET's GET THE ALES THAT WE WANT TO COMPARE ACROSS THE PATHOS
+comparison_ales <- c("env_maximum_relative_humidity",
+                     "env_average_wind_speed_kph",
+                     "env_total_precipitation_cm",
+                     "env_maximum_soil_temperature_c",
+                     "env_average_soil_moisture_m3_m3")
+getranks = vi(final_model)
+getranks$rank = 1:nrow(getranks)
+getranks %>% filter(Variable %in% c(comparison_ales, "crown_rust", "anthracnose"))
+nicenam=c("Humidity (%)",
+          "Wind Speed (kph)",
+          "Precipitation (cm)",
+          "Air Temperature (C)",
+          "Soil Moisture (m3/m3)")
+names(nicenam) = comparison_ales
+plist <- list()
+for(var in 1:length(comparison_ales)){
+  var1 <- nicenam[var]
+  var1 = paste(strwrap(var1, 30), collapse = '\n')
+  plist[[var]] = viz_ales_1d(predictor, comparison_ales[var], lcol = "#33A02C") + 
+    xlab(var1) + theme(text = element_text(size = 6), axis.text = element_text(size = 6)) +
+    xlim(c(min(rf.data[,comparison_ales[var]]), max(rf.data[,comparison_ales[var]]))) +
+    ylab("") + xlab("")
+  ggsave(filename = paste("results/BP_RF_ALE_COMPARESET_", comparison_ales[var], ".pdf", sep = ""), plot = plist[[var]], width = 6.5/5, height = 1.6)
+}
+
+
 
 #modify based on var of interest
 get_ale_pathos <- names(test_data_processed)[grepl("^crown|^anth", names(test_data_processed))]
@@ -422,13 +480,15 @@ for(pred in 1:length(get_ale_pathos)){
 #special barplot
 dis.pal <- c(RColorBrewer::brewer.pal(12, "Paired")[c(1:2, 3:4)], "#FEE99A", "#FEC601")
 
-out.ale %>% 
-  ggplot(aes(x=patho, y = .value, fill = patho)) + geom_bar(stat = "identity") + xlab("Disease Presence") + ylab("ALE") + 
-  theme_bw() + geom_hline(yintercept = 0) +
+out.ale %>% mutate(patho = ifelse(patho == "crown_rust", "CR", "ANTH")) %>%
+  ggplot(aes(x=patho, y = .value, fill = patho)) + geom_bar(stat = "identity") +
+  xlab("") + ylab("") + 
+  theme_classic() + geom_hline(yintercept = 0) +
+  ylim(c(-0.018, 0.00))+
   scale_fill_manual(values = c( "#1F78B4", "#FEC601")) + 
   theme(legend.position = "none", text = element_text(size = 6))
 
-ggsave(filename = paste("results/BP_RF_ALE_", "coinfection", ".pdf", sep = ""), width =(6.5-3.25)/2, height = 4/2)
+ggsave(filename = paste("results/BP_RF_ALE_", "coinfection", ".pdf", sep = ""), width =(6.5)/5, height = 1.6)
 
 
 ###### ------------- MACHINE LEARNING FOR ANTHRACNOSE ---------------- ##############
@@ -491,15 +551,15 @@ rf_results <- tune_grid(
 plan(sequential)
 #  COLLECT THE BEST RESULTS
 best_params <- select_best(rf_results, metric = "roc_auc")
-best_params #best mtry is 4
+best_params #best mtry is 12
 
 #FINALIZE THE MODEL WITH THE BEST PARM SPACE
 final_rf <- rf_workflow %>%
   finalize_workflow(select_best(rf_results, metric = "roc_auc")) %>%
   last_fit(split_data)
-save(final_rf, file="results/w7_anth_rf_mtry4_upsample.Rdata")
+save(final_rf, file="results/w7_anth_rf_mtry12_upsample.Rdata")
 
-load("results/w7_anth_rf_mtry4_upsample.Rdata")
+load("results/w7_anth_rf_mtry12_upsample.Rdata")
 
 all_metrics = collect_metrics(final_rf)
 all_metrics
@@ -553,7 +613,7 @@ vi.model %>% tail(15) %>%
   ggplot(aes(x=Importance, y=Variable, fill = Type)) + 
   geom_bar(stat="identity", col = "grey20") + theme_bw() + ggtitle("Rust Observation") +
   theme(text=element_text(size = 8)) + 
-  scale_fill_grey(start = .5, end = .9) + 
+  scale_fill_grey(start = .1, end = .9) + 
   theme(legend.position = c(.72, .2),
         text=element_text(size = 8), axis.text = element_text(size=6), legend.title = element_text(size = 8))+
   theme(legend.key.size = unit(0.35, "cm"))+
@@ -573,6 +633,7 @@ colnames(cor_rf) <- gsub(" in| micromolm2s| wm2| m3m3", "", colnames(cor_rf))
 colnames(cor_rf) <- substr(colnames(cor_rf), 1, 35)
 rownames(cor_rf) = colnames(cor_rf)
 
+dev.off()
 par(lheight = 0.3)
 pdf("results/RF_Anth_VarCorr.pdf",width = 6.5, height = 6.5)
 pheatmap(cor_rf, cluster_rows = T, cluster_cols = T)
@@ -583,7 +644,7 @@ predictor <- Predictor$new(model=final_model$fit,
                            y=test_data_processed$anthracnose)
 
 #these come from the correlation matrix, manually defined
-get_ale = names(test_data_processed)[grepl("^env_average_soil_temp|^env_maximum_relative_humidity|^env_minimum_soil_moisture|^env_maximum_soil_moisture", names(test_data_processed))]
+#get_ale = names(test_data_processed)[grepl("^env_average_soil_temp|^env_maximum_relative_humidity|^env_minimum_soil_moisture|^env_maximum_soil_moisture", names(test_data_processed))]
 get_ale = names(test_data_processed)[names(test_data_processed) %in% voi$Variable]
 #create a plot for each one
 plist <- list()
@@ -598,6 +659,35 @@ for(var in 1:length(get_ale)){
 library(cowplot)
 plot_grid(plotlist = plist, nrow = 5, ncol = 3)
 ggsave("results/allALEs_ANTH.pdf", width = 6.5, height = 8)
+
+#LET's GET THE ALES THAT WE WANT TO COMPARE ACROSS THE PATHOS
+comparison_ales <- c("env_maximum_relative_humidity",
+                     "env_average_wind_speed_kph",
+                     "env_total_precipitation_cm",
+                     "env_maximum_soil_temperature_c",
+                     "env_average_soil_moisture_m3_m3")
+getranks = vi(final_model)
+getranks$rank = 1:nrow(getranks)
+getranks %>% filter(Variable %in% c(comparison_ales, "brown_patch", "crown_rust"))
+nicenam=c("Max Humidity (%)",
+          "Avg. Wind Speed (kph)",
+          "Total Precip. (cm)",
+          "Max Soil Temp. (C)",
+          "Avg. Soil Moist. (m3/m3)")
+names(nicenam) = comparison_ales
+
+plist <- list()
+
+for(var in 1:length(comparison_ales)){
+  var1 <- nicenam[var]
+  var1 = paste(strwrap(var1, 30), collapse = '\n')
+  plist[[var]] = viz_ales_1d(predictor, comparison_ales[var], lcol = "#1F78B4") + 
+    xlab(var1) + theme(text = element_text(size = 6), axis.text = element_text(size = 6), axis.title.x = element_text(size = 6)) +
+    xlim(c(min(rf.data[,comparison_ales[var]]), max(rf.data[,comparison_ales[var]]))) +
+    ylab("") + xlab(var1)
+  ggsave(filename = paste("results/ANTH_RF_ALE_COMPARESET_", comparison_ales[var], ".pdf", sep = ""), plot = plist[[var]], width = 6.5/5, height = 1.7)
+}
+
 
 #modify based on var of interst
 get_ale_pathos <- names(test_data_processed)[grepl("^crown|^brown", names(test_data_processed))]
@@ -616,12 +706,13 @@ for(pred in 1:length(get_ale_pathos)){
 #special barplot
 dis.pal <- c(RColorBrewer::brewer.pal(12, "Paired")[c(1:2, 3:4)], "#FEE99A", "#FEC601")
 
-out.ale %>% 
-  ggplot(aes(x=patho, y = .value, fill = patho)) + geom_bar(stat = "identity") + xlab("Disease Presence") + ylab("ALE") + 
-  theme_bw() + geom_hline(yintercept = 0) +
-  scale_fill_manual(values = c( "#33A02C", "#FEC601")) + 
+out.ale %>% mutate(patho = ifelse(patho == "brown_patch", "BP", "CR")) %>%
+  ggplot(aes(x=patho, y = .value, fill = patho)) + geom_bar(stat = "identity") +
+  xlab("Disease Co-Occurrence") + ylab("") + 
+  theme_classic() + geom_hline(yintercept = 0) +
+  scale_fill_manual(values = c( "#33A02C", "#FEC601")) + ylim(c(0.00, 0.04))+
   theme(legend.position = "none", text = element_text(size = 6))
 
-ggsave(filename = paste("results/ANTH_RF_ALE_", "coinfection", ".pdf", sep = ""), width =(6.5-3.25)/2, height = 4/2)
+ggsave(filename = paste("results/ANTH_RF_ALE_", "coinfection", ".pdf", sep = ""), width =6.5/5, height = 1.7)
 
 

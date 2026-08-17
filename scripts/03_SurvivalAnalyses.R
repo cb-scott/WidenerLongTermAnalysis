@@ -4,22 +4,36 @@ library(survival)
 library(contsurvplot)
 library(survminer)
 #byleaf.2018
+dis.pal
 ### ERROR: Originally this data had the incorrect treatments included; let's not blanket exclude the treatments
 #but instead we can look at it at both the leaf and the plant level for any treatments where *fungicide was not sprayed*
-forest.plot <- function(cox_model){
+forest.plot <- function(cox_model, focal.dis){
+  forest.pal = c("#1F78B4", "#33A02C", "#FEC601", "gray40", "gray40", "gray40", "gray40")
+
+  names(forest.pal) = c("Prior ANTH", "Prior BP", "Prior CR", "PC1", "PC2", "PC3", "PC4")
+  
   y = summary(cox_model)
   coef = y$coefficients
   cis = data.frame(y$conf.int)
   cis$var = rownames(cis)
-  p <-  ggplot(cis, aes(x=log(exp.coef.), y=var)) + 
-    geom_vline(xintercept =0, col = 'darkblue') +
+  cis = cis %>% mutate(var = case_when(var == "prev.bp1"~"Prior BP",
+                                       var == "prev.anth1" ~ "Prior ANTH", 
+                                       var == "prev.rust1" ~ "Prior CR",
+                                       .default = var))
+  cis$var = factor(cis$var, levels = rev(sort(unique(cis$var))))
+  
+  cis = cis %>% mutate(bio = ifelse(grepl("PC[0-9]", var) == T, "abio", "bio"))
+  ci.pal = forest.pal[levels(cis$var)]
+  p <-  ggplot(cis, aes(x=log(exp.coef.), y=var, col = var)) + 
+    geom_vline(xintercept =0, col = 'gray', lty = 'dashed') +
     geom_point() +
     geom_errorbarh(aes(xmin = log(lower..95), xmax = log(upper..95), width = .2)) + 
-    theme_bw() + 
-    xlab("log(HR)") + ylab("") + 
-    theme(text = element_text(size = 8))
+    theme_classic() + 
+    xlab(paste("log(HR:",focal.dis, ")", sep="")) + ylab("") + 
+    scale_color_manual(values=ci.pal) + 
+    theme(text = element_text(size = 8), legend.position = "none")
   return(p)
-}
+} 
 
 calc_ll_robust <- function(full, red){
   
@@ -110,7 +124,6 @@ keep.leaves = filt.obs %>% select(LeafID, PlantID) %>% distinct() %>%
   slice_sample(n = 1) %>%
   ungroup() 
 
-rust.leaf.red = rust.leaf %>% filter(LeafID %in% keep.leaves$LeafID)
 
 cox_model.rust.leaf.red <- coxph(
   Surv(start.days, end.days, event = crown_rust) ~ PC1 + PC2 + PC3 + PC4 + prev.anth + prev.bp,
@@ -308,12 +321,12 @@ calc_ll_robust(cox_model.bp.plant, cox_model.bp.plant_noinf)
 
 
 ########------ CREATE NICE FOREST PLOTS --------
-forest.plot(cox_model.bp.plant)
-ggsave(file="results/SurvBP.pdf", width = 4, height = 3, units = "in", dpi = 500)
-forest.plot(cox_model.anth.plant)
-ggsave(file="results/SurvANTH.pdf", width = 4, height = 3, units = "in", dpi = 500)
-forest.plot(cox_model.rust.plant)
-ggsave(file="results/SurvRUST.pdf", width = 4, height = 3, units = "in", dpi = 500)
+forest.plot(cox_model.bp.plant, "brown patch")
+ggsave(file="results/SurvBP.pdf", width = 6.5/3, height = 2, units = "in", dpi = 500)
+forest.plot(cox_model.anth.plant, "anthracnose")
+ggsave(file="results/SurvANTH.pdf", width = 6.5/3, height = 2, units = "in", dpi = 500)
+forest.plot(cox_model.rust.plant, "crown rust")
+ggsave(file="results/SurvRUST.pdf", width = 6.5/3, height = 2, units = "in", dpi = 500)
 
 
 #first_date = min(long.withweather$Survey.Date)
