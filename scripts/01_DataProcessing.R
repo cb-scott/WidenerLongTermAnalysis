@@ -56,7 +56,8 @@ outWidener22.24 <- outWidener22.24 %>% drop_na() #check this later and see what'
 
 #widener long term plot data is at the tiller level, combine here
 fungicide = read.csv("data/Rita_longitudinal/monthly_disease_survey_171819.csv", header = T) %>%
-  filter(fungicide == "Never") %>% select(month, year, plot, survey_date, plant, leaf, anthracnose, crown_rust, brown_patch) %>%
+  filter(fungicide == "Never") %>%
+  select(month, year, plot, survey_date, plant, leaf, anthracnose, crown_rust, brown_patch) %>%
   pivot_longer(anthracnose:brown_patch, names_to = "disease", values_to = "presence") %>%
   group_by(plant, survey_date, plot, month, year, disease) %>%
   summarise(disease.sum = sum(presence)) %>% mutate(disease.sum = ifelse(disease.sum >= 1, 1, 0)) %>%
@@ -80,7 +81,8 @@ long2018 = long2018 %>% left_join(trtments) %>% filter(fungicide == "Never")
 merge2018 = long2018 %>% select(plot, tiller, leaf, anthracnose, crown_rust, brown_patch, survey_date) #only keep 2018
 #this isn't structured the way I thought it was
 #get rid of individual plant ID's, we're not going to track them through time in the overall model
-longitudinal =  merge2018 %>% pivot_longer(anthracnose:brown_patch, names_to = "disease", values_to = "presence") %>%
+longitudinal =  merge2018 %>% 
+  pivot_longer(anthracnose:brown_patch, names_to = "disease", values_to = "presence") %>%
   group_by(plot, tiller, disease, survey_date) %>% summarise(disease.sum = sum(presence)) %>%
   mutate(disease.sum = ifelse(disease.sum >=1, 1, 0)) %>% 
   pivot_wider(names_from = disease, values_from = disease.sum) %>%
@@ -116,13 +118,15 @@ midmonth19 = midmonth.control %>% mutate(survey_date = as.Date(survey_date, form
   mutate(plotID = paste(gsub("plotID", "fencedID", plot))) %>% select(plotID, brown_patch, crown_rust, anthracnose, survey_date)
 colnames(midmonth19) = c("PlotID", "brown_patch", "crown_rust", "anthracnose", "Survey.Date") 
 
-long18 = longitudinal %>% mutate(survey_date = as.Date(survey_date, format = "%m/%d/%y")) %>% ungroup() %>%
+long18 = longitudinal %>% 
+  mutate(survey_date = as.Date(survey_date, format = "%m/%d/%y")) %>% ungroup() %>%
   mutate(PlotID = paste("fencedID", gsub("plotID_", "", plot), sep = "_")) %>%
   select(PlotID, brown_patch, crown_rust, anthracnose, survey_date)
 colnames(long18) = c("PlotID", "brown_patch", "crown_rust", "anthracnose", "Survey.Date") 
 
 plots24 = plots2024 %>% mutate(Survey.Date = as.Date(Survey.Date, format = "%Y-%m-%d")) %>% ungroup() %>%
-  mutate(plotID = paste("WidenerPlot", Plot.ID, sep = "_")) %>% select(plotID, Rhiz.Prev, Rust.prev, Anth.Prev, Survey.Date)
+  mutate(plotID = paste("WidenerPlot", Plot.ID, sep = "_")) %>% 
+  select(plotID, Rhiz.Prev, Rust.prev, Anth.Prev, Survey.Date)
 colnames(plots24) = c("PlotID", "brown_patch", "crown_rust", "anthracnose", "Survey.Date")  
 
 #something is wrong, why do my dates start at 2020
